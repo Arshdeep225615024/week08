@@ -2,7 +2,7 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-
+ # Week 08 CI/CD demonstration
 from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
@@ -12,8 +12,7 @@ from app.db import Base, engine
 from app.models import User, UserRole
 from app.routers import auth, users
 from app.security import hash_password
-
-
+# Week 08 CI/CD demonstration
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
