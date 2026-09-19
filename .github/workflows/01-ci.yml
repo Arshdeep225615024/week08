@@ -5,10 +5,9 @@ on:
   push:
     branches:
       - main
-  
+
   # Manual trigger for the workflow
   workflow_dispatch:
-
 
 jobs:
 
@@ -21,7 +20,6 @@ jobs:
 
     strategy:
       fail-fast: false
-
       matrix:
         include:
           - service: user-service
@@ -81,7 +79,6 @@ jobs:
       AZURE_STORAGE_CONTAINER_NAME: ""
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -101,86 +98,6 @@ jobs:
         run: |
           pytest -v
 
-
-  # =========================================================
-  # Build and Push Docker Images
-  # =========================================================
-  build-and-push:
-    name: Build and Push ${{ matrix.image }}
-    runs-on: ubuntu-latest
-
-    # All backend tests must pass before this job starts
-    needs:
-      - backend-test
-      - terraform
-
-    # Build and push when code is pushed to main or manually triggered
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-
-    strategy:
-      fail-fast: false
-
-      matrix:
-        include:
-          - service: frontend
-            image: koalatech-frontend
-
-          - service: user-service
-            image: koalatech-user-service
-
-          - service: student-service
-            image: koalatech-student-service
-
-          - service: lecturer-service
-            image: koalatech-lecturer-service
-
-          - service: course-service
-            image: koalatech-course-service
-
-          - service: enrollment-service
-            image: koalatech-enrollment-service
-
-    steps:
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Login to Azure Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ vars.ACR_LOGIN_SERVER }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-
-      - name: Build Docker image
-        run: |
-          docker build \
-            --platform linux/amd64 \
-            -t ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }} \
-            ./${{ matrix.service }}    
-
-      - name: Login to Docker Hub for Scout
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}  
-
-      - name: Docker Scout vulnerability scan
-        uses: docker/scout-action@v1
-        with:
-          command: cves
-          image: ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
-          only-severities: critical,high
-          summary: true
-          dockerhub-user: ${{ secrets.DOCKERHUB_USERNAME }}
-          dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}       
-
-    
-
-      - name: Push Docker image with commit SHA
-        run: |
-          docker push \
-            ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
 
   # =========================================================
   # Terraform Infrastructure Validation
@@ -213,4 +130,94 @@ jobs:
         working-directory: terraform
         run: terraform validate
 
-    
+
+  # =========================================================
+  # Build, Scan and Push Docker Images
+  # =========================================================
+  build-and-push:
+    name: Build and Push ${{ matrix.image }}
+    runs-on: ubuntu-latest
+
+    # Tests and Terraform validation must pass first
+    needs:
+      - backend-test
+      - terraform
+
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        include:
+          - service: frontend
+            image: koalatech-frontend
+
+          - service: user-service
+            image: koalatech-user-service
+
+          - service: student-service
+            image: koalatech-student-service
+
+          - service: lecturer-service
+            image: koalatech-lecturer-service
+
+          - service: course-service
+            image: koalatech-course-service
+
+          - service: enrollment-service
+            image: koalatech-enrollment-service
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -------------------------------------------------------
+      # Authenticate to Azure Container Registry
+      # -------------------------------------------------------
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      # -------------------------------------------------------
+      # Build image
+      # -------------------------------------------------------
+      - name: Build Docker image
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            -t ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }} \
+            ./${{ matrix.service }}
+
+      # -------------------------------------------------------
+      # Authenticate Docker Scout
+      # -------------------------------------------------------
+      - name: Login to Docker Hub for Scout
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # -------------------------------------------------------
+      # Security scan BEFORE deployment/push
+      # -------------------------------------------------------
+      - name: Docker Scout vulnerability scan
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
+          only-severities: critical,high
+          summary: true
+          dockerhub-user: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # -------------------------------------------------------
+      # Push image only after Scout has executed
+      # -------------------------------------------------------
+      - name: Push Docker image with commit SHA
+        run: |
+          docker push \
+            ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
