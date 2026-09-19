@@ -26,17 +26,16 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Login to Azure
-        uses: azure/login@v3
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Get AKS credentials
+      - name: Configure AKS access
         run: |
-          az aks get-credentials \
-            --resource-group ${{ vars.AKS_RESOURCE_GROUP }} \
-            --name ${{ vars.AKS_CLUSTER_NAME }} \
-            --overwrite-existing
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.AKS_KUBECONFIG }}" | base64 --decode > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Verify AKS connection
+        run: |
+          kubectl config current-context
+          kubectl get nodes
 
       - name: Create staging namespace
         run: |
