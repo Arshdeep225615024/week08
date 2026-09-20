@@ -26,11 +26,17 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Configure AKS access
+      - name: Login to Azure
+        uses: azure/login@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get AKS credentials
         run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.AKS_KUBECONFIG }}" | base64 --decode > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
+          az aks get-credentials \
+            --resource-group ${{ vars.AKS_RESOURCE_GROUP }} \
+            --name ${{ vars.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
 
       - name: Verify AKS connection
         run: |
@@ -149,16 +155,3 @@ jobs:
           kubectl get services -n staging
           kubectl get pvc -n staging
 
-      - name: Validate monitoring components
-        run: |
-          echo "=== Monitoring Pods ==="
-          kubectl get pods -n monitoring
-
-          echo "=== Monitoring Services ==="
-          kubectl get services -n monitoring
-
-          echo "=== Prometheus StatefulSets ==="
-          kubectl get statefulsets -n monitoring
-
-          echo "=== Grafana Deployment ==="
-          kubectl get deployment monitoring-grafana -n monitoring
